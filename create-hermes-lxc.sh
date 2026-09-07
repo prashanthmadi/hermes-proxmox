@@ -169,6 +169,8 @@ pct exec "$CTID" -- env CLIENT_CIDR="$CLIENT_CIDR" bash -s <<'CONTAINER_SCRIPT'
 set -Eeuo pipefail
 umask 022
 export DEBIAN_FRONTEND=noninteractive
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 
 chmod 0755 /etc
 for attempt in $(seq 1 15); do
@@ -189,7 +191,7 @@ done
 apt-get update
 apt-get -y dist-upgrade
 apt-get install -y --no-install-recommends \
-  ca-certificates curl git jq nftables openssl unattended-upgrades
+  build-essential ca-certificates curl git jq nftables openssl unattended-upgrades
 apt-get purge -y openssh-server
 apt-get clean
 rm -rf /var/lib/apt/lists/*
