@@ -122,9 +122,13 @@ TEMPLATE_NAME="$(pveam available --section system \
   | sort -V | tail -n1)"
 [[ -n "$TEMPLATE_NAME" ]] || die "No Debian 12 template is available for $ARCH"
 TEMPLATE_VOLUME="${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE_NAME}"
-if ! pvesm path "$TEMPLATE_VOLUME" >/dev/null 2>&1; then
+TEMPLATE_PATH="$(pvesm path "$TEMPLATE_VOLUME" 2>/dev/null || true)"
+if [[ -z "$TEMPLATE_PATH" || ! -f "$TEMPLATE_PATH" ]]; then
   pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME"
 fi
+TEMPLATE_PATH="$(pvesm path "$TEMPLATE_VOLUME" 2>/dev/null || true)"
+[[ -n "$TEMPLATE_PATH" && -f "$TEMPLATE_PATH" ]] \
+  || die "Template download did not create $TEMPLATE_VOLUME"
 
 WORK_DIR="$(mktemp -d)"
 printf '%s' "$DASHBOARD_PASSWORD" > "$WORK_DIR/dashboard-password"
