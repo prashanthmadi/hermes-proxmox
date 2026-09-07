@@ -36,6 +36,8 @@ storage with the most free space, latest Debian 12 template, and DHCP
 networking. It creates a 4-core, 4 GB RAM, 16 GB unprivileged LXC, runs Hermes
 as a non-root service, permits port `9119` only from the trusted client's
 `/32`, and enables Debian security updates. SSH is not installed in the LXC.
+The same authenticated service provides both the web dashboard and the Hermes
+Desktop remote backend.
 
 ## Connect
 
@@ -44,7 +46,7 @@ the Proxmox host, replacing `CTID`:
 
 ```bash
 pct exec CTID -- runuser -u hermes -- \
-	/home/hermes/.hermes/hermes-agent/venv/bin/hermes setup
+	/home/hermes/.local/bin/hermes setup
 ```
 
 In Hermes Desktop, open **Settings -> Gateways -> Add connection**:
@@ -55,6 +57,18 @@ In Hermes Desktop, open **Settings -> Gateways -> Add connection**:
 - Password: the password entered during installation
 
 Save and test the connection.
+
+From the trusted client, verify that the backend advertises the required login
+provider before connecting Desktop:
+
+```bash
+curl -s http://LXC_IP:9119/api/status
+```
+
+The JSON must contain `"auth_required":true` and include `"basic"` in
+`auth_providers`. A dashboard bound to `127.0.0.1` may work in a browser inside
+the LXC but cannot serve a remote Desktop client. Port `8642`, when enabled, is
+the separate OpenAI-compatible API and is not the Desktop gateway.
 
 ## Changed Client IP
 
@@ -72,12 +86,12 @@ the client device avoids this step.
 
 ```bash
 # Service health and logs
-pct exec CTID -- systemctl status hermes-serve.service
-pct exec CTID -- journalctl -u hermes-serve.service -n 100 --no-pager
+pct exec CTID -- systemctl status hermes-dashboard.service
+pct exec CTID -- journalctl -u hermes-dashboard.service -n 100 --no-pager
 
 # Hermes diagnostics
 pct exec CTID -- runuser -u hermes -- \
-	/home/hermes/.hermes/hermes-agent/venv/bin/hermes doctor
+	/home/hermes/.local/bin/hermes doctor
 
 # Proxmox backup before major changes
 vzdump CTID --mode snapshot --compress zstd

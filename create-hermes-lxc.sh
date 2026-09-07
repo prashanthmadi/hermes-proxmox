@@ -135,6 +135,7 @@ printf '%s' "$DASHBOARD_PASSWORD" > "$WORK_DIR/dashboard-password"
 unset DASHBOARD_PASSWORD
 
 printf 'Creating Hermes LXC %s on %s using %s...\n' "$CTID" "$BRIDGE" "$ROOT_STORAGE"
+umask 022
 pct create "$CTID" "$TEMPLATE_VOLUME" \
   --hostname "hermes-$CTID" \
   --ostype debian \
@@ -148,6 +149,7 @@ pct create "$CTID" "$TEMPLATE_VOLUME" \
   --startup order=30,up=30 \
   --tags hermes-agent \
   --description "Hermes Agent; authenticated LAN gateway for Hermes Desktop"
+umask 077
 CREATED=1
 pct start "$CTID"
 
@@ -165,8 +167,24 @@ pct push "$CTID" "$WORK_DIR/dashboard-password" /root/hermes-dashboard-password 
 printf 'Installing and hardening Hermes...\n'
 pct exec "$CTID" -- env CLIENT_CIDR="$CLIENT_CIDR" bash -s <<'CONTAINER_SCRIPT'
 set -Eeuo pipefail
-umask 077
+umask 022
 export DEBIAN_FRONTEND=noninteractive
+
+chmod 0755 /etc
+for attempt in $(seq 1 15); do
+  if runuser -u _apt -- getent ahostsv4 deb.debian.org >/dev/null 2>&1; then
+    break
+  fi
+  if [[ "$attempt" -eq 15 ]]; then
+    echo "Container DNS is unavailable to the APT sandbox user." >&2
+    echo "Resolver configuration:" >&2
+    cat /etc/resolv.conf >&2
+    echo "Routes:" >&2
+    ip route >&2
+    exit 1
+  fi
+  sleep 2
+done
 
 apt-get update
 apt-get -y dist-upgrade
@@ -209,12 +227,19 @@ trap 'rm -f "$INSTALLER"' EXIT
 curl --proto '=https' --tlsv1.2 -fsSL \
   https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
 chown hermes:hermes "$INSTALLER"
-runuser -u hermes -- env HOME=/home/hermes bash "$INSTALLER" \
-  --non-interactive --skip-setup --skip-computer-use
+runuser -u hermes -- env \
+  HOME=/home/hermes \
+  npm_config_yes=true \
+  bash "$INSTALLER" \
+  --non-interactive \
+  --skip-setup \
+  --skip-computer-use \
+  --hermes-home /home/hermes/.hermes \
+  --dir /home/hermes/.hermes/hermes-agent
 rm -f "$INSTALLER"
 trap - EXIT
 
-HERMES=/home/hermes/.hermes/hermes-agent/venv/bin/hermes
+HERMES=/home/hermes/.local/bin/hermes
 HERMES_PYTHON=/home/hermes/.hermes/hermes-agent/venv/bin/python
 [[ -x "$HERMES" ]] || { echo "Hermes launcher was not installed" >&2; exit 1; }
 [[ -x "$HERMES_PYTHON" ]] || { echo "Hermes Python was not installed" >&2; exit 1; }
@@ -240,9 +265,9 @@ EOF
 chown hermes:hermes "$AUTH_ENV"
 chmod 0600 "$AUTH_ENV"
 
-cat > /etc/systemd/system/hermes-serve.service <<EOF
+cat > /etc/systemd/system/hermes-dashboard.service <<EOF
 [Unit]
-Description=Hermes Agent remote backend
+Description=Hermes Agent dashboard and remote backend
 After=network-online.target
 Wants=network-online.target
 
@@ -255,7 +280,7 @@ Environment=HERMES_HOME=/home/hermes/.hermes
 Environment=PATH=/home/hermes/.hermes/node/bin:/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=$AUTH_ENV
 WorkingDirectory=/home/hermes
-ExecStart=$HERMES serve --host 0.0.0.0 --port 9119
+ExecStart=$HERMES dashboard --host 0.0.0.0 --port 9119 --no-open
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=45
@@ -277,12 +302,12 @@ SystemCallArchitectures=native
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable --now hermes-serve.service
+systemctl enable --now hermes-dashboard.service
 
 for attempt in $(seq 1 30); do
   curl -fsS http://127.0.0.1:9119/api/status >/tmp/hermes-status.json 2>/dev/null && break
   if [[ "$attempt" -eq 30 ]]; then
-    journalctl -u hermes-serve.service --no-pager -n 100 >&2
+    journalctl -u hermes-dashboard.service --no-pager -n 100 >&2
     exit 1
   fi
   sleep 2
@@ -305,4 +330,4 @@ printf '\nHermes LXC is ready.\n'
 printf '  CTID: %s\n  URL:  http://%s:9119\n  User: admin\n' "$CTID" "$LXC_IP"
 printf '\nIn Hermes Desktop, add a Remote gateway with the URL above and sign in.\n'
 printf 'Configure Hermes from the Proxmox shell with:\n'
-printf '  pct exec %s -- runuser -u hermes -- %s setup\n' "$CTID" "/home/hermes/.hermes/hermes-agent/venv/bin/hermes"
+printf '  pct exec %s -- runuser -u hermes -- %s setup\n' "$CTID" "/home/hermes/.local/bin/hermes"
