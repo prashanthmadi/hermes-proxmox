@@ -118,9 +118,9 @@ TEMPLATE_STORAGE="$(pick_storage vztmpl)"
 ARCH="$(dpkg --print-architecture)"
 pveam update
 TEMPLATE_NAME="$(pveam available --section system \
-  | awk -v arch="$ARCH" '$2 ~ "^debian-(13|12)-standard_.*_" arch "\\.tar\\.(zst|gz)$" {print $2}' \
+  | awk -v arch="$ARCH" '$2 ~ "^debian-12-standard_.*_" arch "\\.tar\\.(zst|gz)$" {print $2}' \
   | sort -V | tail -n1)"
-[[ -n "$TEMPLATE_NAME" ]] || die "No supported Debian template is available for $ARCH"
+[[ -n "$TEMPLATE_NAME" ]] || die "No Debian 12 template is available for $ARCH"
 TEMPLATE_VOLUME="${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE_NAME}"
 if ! pvesm path "$TEMPLATE_VOLUME" >/dev/null 2>&1; then
   pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME"
@@ -148,10 +148,11 @@ CREATED=1
 pct start "$CTID"
 
 for attempt in {1..60}; do
-  if pct exec "$CTID" -- systemctl is-system-running --wait >/dev/null 2>&1; then
+  SYSTEM_STATE="$(pct exec "$CTID" -- systemctl is-system-running 2>/dev/null || true)"
+  if [[ "$SYSTEM_STATE" == "running" || "$SYSTEM_STATE" == "degraded" ]]; then
     break
   fi
-  [[ "$attempt" -lt 60 ]] || die "Container did not finish booting"
+  [[ "$attempt" -lt 60 ]] || die "Container did not finish booting (systemd state: ${SYSTEM_STATE:-unknown})"
   sleep 1
 done
 

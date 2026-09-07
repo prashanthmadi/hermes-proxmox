@@ -32,10 +32,10 @@ a password of at least 16 characters. The plaintext password is removed after
 the script creates its scrypt hash.
 
 The script automatically chooses the next CTID, primary Proxmox bridge, active
-storage with the most free space, latest Debian 12/13 template, and DHCP
+storage with the most free space, latest Debian 12 template, and DHCP
 networking. It creates a 4-core, 4 GB RAM, 16 GB unprivileged LXC, runs Hermes
-as a non-root service, permits port `9119` only from the trusted client's `/32`, and
-enables Debian security updates. SSH is not installed in the LXC.
+as a non-root service, permits port `9119` only from the trusted client's
+`/32`, and enables Debian security updates. SSH is not installed in the LXC.
 
 ## Connect
 
